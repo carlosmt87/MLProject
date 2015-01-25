@@ -1,0 +1,167 @@
+---
+title: "Practical Machine Learning Project"
+author: "Carlos Trejo"
+date: "Sunday, January 25, 2015"
+output: html_document
+---
+
+# Activity Recognition of Weight Lifting Exercises
+
+## Summary
+The goal of this project is to build a predictive model to assess the quality of execution of weight lifting exercises. Machine learning is used to detect mistakes automatically. 
+
+First of all, the files with the training and test set will be loaded and cleaned, in order to select just the useful features for prediction.
+
+Then, we will use the training data to build a prediction model. To estimate model accuracy, k-fold cross validation will be used.  
+
+In order to compare results, 2 different models will be built: Trees and random forests.
+
+Finally, we are going to compare the accuracy of the models and use the best to make our final predictions.
+
+
+# 1. Data preparation
+
+
+```{r}
+library(caret)
+library(Amelia)
+```
+
+Load the datafiles:
+
+```{r, cache=TRUE}
+training <- read.csv('pml-training.csv', na.strings=c("NA","#DIV/0!",""))
+test <- read.csv('pml-testing.csv', na.strings=c("NA","#DIV/0!",""))
+```
+
+Classe is the target variable, let's take a look at it.
+
+According to the dataset documentation:
+
+A - Exercise done according to specifications
+
+B - Throwing the elbows to the front
+
+C - Lifting the dumbbell only halfway
+
+D - Lowering the dumbbell only halfway
+
+```{r}
+table(training$classe)
+```
+
+# 2. Feature Selection
+
+```{r}
+dim(training)
+```
+
+There are 160 features available. Let's make a selection of the most useful ones.
+
+We are going to make the same transformations in the testing and the test set.
+
+
+## a. Get and remove near zero covariates from the data
+
+```{r}
+nzv <- nearZeroVar(training, saveMetrics=TRUE)
+training <- training[,-which(nzv$nzv==TRUE)]
+test <- test[,-which(nzv$nzv==TRUE)]
+dim(training)
+
+```
+
+After removing the near zero covariates, we are left with 124 features. 
+
+## b. Analyze missing data
+Draw a missing map with darkred color for missing values, lightgreen for observed values.
+
+```{r}
+missmap(training, col=c("darkred","lightgreen"), legend=FALSE, rank.order=FALSE)
+```
+
+The previous plot shows that there are a lot of almost completely empty (and therefore useless) columns in the dataset, so let's remove them.
+
+Count the missing values for each column to decide which ones are to be deleted:
+```{r}
+totalMissingValues = sapply(training, function(x) {sum(is.na(x))})
+hist(totalMissingValues)
+```
+
+Here we can see the useless columns have more than 15,000 missing values, so that's will be our simple rule to drop columns:
+
+```{r}
+columnsToRemove = names(totalMissingValues[totalMissingValues>15000])
+training <- training[,!names(training) %in% columnsToRemove]
+test <- test[,!names(test) %in% columnsToRemove]
+```
+
+According to the documentation, the first seven variables are related to the subject and some other descriptive values, so we can also leave them out:
+```{r}
+training <- training[,-c(1:7)]
+test <- test[,-c(1:7)]
+dim(training)
+```
+
+Our final tidy dataset have just the most useful 52 features. Let's prepare for model creation.
+
+# 2. Train Control
+The method we will be using for train control is 10 fold Cross Validation. Also, set the seed for reproducibility reasons:
+
+```{r}
+train_control <- trainControl(method="cv", number=10, allowParallel = TRUE)
+set.seed(1234)
+```
+
+# 3. Building Predictive Models
+
+Let's build two different models: 
+
+## a. Trees
+```{r}
+startTime <- Sys.time()
+model1 <- train(classe ~ ., data = training, method = "rpart", trControl = train_control)
+endTime <- Sys.time()
+model1Time <- endTime - startTime
+print(model1Time)
+round(max(head(model1$results)$Accuracy), 3)
+```
+
+The model used aprox. 37 seconds to run, but the accuracy of the predictions is not good: 51%
+
+## b. Random Forests
+```{r}
+startTime <- Sys.time()
+model2 <- train(classe ~ ., data = training, method = "rf", trControl = train_control)
+endTime <- Sys.time()
+model2Time <- endTime - startTime
+print(model2Time)
+round(max(head(model2$results)$Accuracy), 3)
+```
+
+
+Random fortest yields much better results, so let's make our predictions based on this model.
+
+# 4. Making Predictions
+Make the predictions on the test data:
+
+```{r}
+predictions <- predict(model2, test)
+```
+
+
+Make the files to submit the homework: 
+
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(predictions)
+```
+
+# 5. Results
+Random Forests algorithm produced a robust and accurate model. All the prediction submitted for the assignment were correct.
